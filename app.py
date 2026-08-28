@@ -95,9 +95,9 @@ if not df.empty:
 
         # --- 검색 결과 출력 ---
         st.markdown("---")
-        st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
-
+        
         if len(filtered_df) == 0:
+            st.subheader("총 0건의 강연이 검색되었습니다.")
             st.info("검색 조건에 일치하는 결과가 없습니다. 필터를 조정해 보세요.")
         else:
             items_per_page = 10
@@ -107,12 +107,31 @@ if not df.empty:
             if st.session_state.current_page > total_pages:
                 st.session_state.current_page = 1
 
+            # 헤더 및 페이지 바로 이동 입력 칸
+            head_col1, head_col2 = st.columns([3, 1])
+            with head_col1:
+                st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다. (페이지 {st.session_state.current_page} / {total_pages})")
+            
+            with head_col2:
+                # 직접 이동할 페이지 입력 칸
+                target_p = st.number_input(
+                    "🎯 페이지 바로 이동", 
+                    min_value=1, 
+                    max_value=total_pages, 
+                    value=st.session_state.current_page,
+                    step=1,
+                    key="direct_page_input"
+                )
+                if target_p != st.session_state.current_page:
+                    st.session_state.current_page = target_p
+                    st.rerun()
+
             start_idx = (st.session_state.current_page - 1) * items_per_page
             end_idx = start_idx + items_per_page
 
             current_batch = filtered_df.iloc[start_idx:end_idx]
 
-            # 목록 출력
+            # 강연 목록 출력
             for idx, row in current_batch.iterrows():
                 with st.container():
                     st.markdown(f"#### 📖 {row['도서/강연제목']}")
@@ -136,11 +155,11 @@ if not df.empty:
                     
                     st.divider()
 
-            # ==================== 하단 페이지 단추 (Pagination) ====================
+            # ==================== 하단 페이지 단추 (1~10 단추 구성) ====================
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 최대 5개의 페이지 번호 버튼만 표시되도록 계산
-            max_visible_buttons = 5
+            # 최대 10개의 페이지 번호 버튼 표기
+            max_visible_buttons = 10
             curr = st.session_state.current_page
             
             start_page = max(1, curr - max_visible_buttons // 2)
@@ -148,7 +167,7 @@ if not df.empty:
             if end_page - start_page + 1 < max_visible_buttons:
                 start_page = max(1, end_page - max_visible_buttons + 1)
 
-            # 버튼들을 가로로 나열
+            # 버튼들을 가로 레이아웃으로 배치
             btn_cols = st.columns(end_page - start_page + 3)
 
             # 1) [◀ 이전] 버튼
@@ -157,10 +176,9 @@ if not df.empty:
                     st.session_state.current_page -= 1
                     st.rerun()
 
-            # 2) [1] [2] [3] ... 숫자 버튼
+            # 2) [1] [2] ... [10] 단추
             for i, p_num in enumerate(range(start_page, end_page + 1)):
                 with btn_cols[i + 1]:
-                    # 현재 보고 있는 페이지는 강조 표시
                     is_current = (p_num == curr)
                     label = f"**[{p_num}]**" if is_current else f"{p_num}"
                     if st.button(label, key=f"page_btn_{p_num}"):
