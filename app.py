@@ -1,50 +1,9 @@
 import streamlit as st
 import pandas as pd
 import math
-import re
 
 # 페이지 기본 설정
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
-
-# ---------------------------------------------------------
-# 제목 정제 (작가명 및 도서명 조합 보완)
-# ---------------------------------------------------------
-def clean_title(row):
-    author = str(row.get("작가", "")).strip()
-    raw_title = str(row.get("도서/강연제목", "")).strip()
-    
-    # 이미 잘 정제된 표시용제목이 존재하는 경우
-    if "표시용제목" in row and str(row["표시용제목"]).strip():
-        display_t = str(row["표시용제목"]).strip()
-        # 표시용제목에도 '작가와의 만남'만 홀로 남아있다면 작가명 결합
-        if re.sub(r"\s+", "", display_t) in ["작가와의만남", "작가와의만남(온라인강연가능)", "작가와의만남(대면)"]:
-            return f"{author} 작가와의 만남" if author else display_t
-        return display_t
-
-    if not raw_title:
-        return f"{author} 작가 강연" if author else "제목 미기재"
-
-    # '｜' 또는 '|' 구분자 처리
-    if "｜" in raw_title:
-        parts = raw_title.split("｜")
-    elif "|" in raw_title:
-        parts = raw_title.split("|")
-    else:
-        parts = [raw_title]
-
-    # 구분자 뒤의 텍스트 추출 및 정제
-    title_part = parts[-1].strip()
-    title_part = re.sub(r"\(.*?\)", "", title_part).strip() # (온라인 강연 가능) 등 괄호 제거
-    title_part = re.sub(r"^\[.*?\]\s*", "", title_part).strip() # [유아, 어린이] 등 대괄호 제거
-
-    # 도서명이 '작가와의 만남'으로만 되어 있거나 비어있는 경우 작가명 결합
-    pure_title = re.sub(r"\s+", "", title_part)
-    if pure_title in ["작가와의만남", ""] or pure_title.startswith("작가와의만남"):
-        if author:
-            return f"{author} 작가와의 만남"
-        return "작가와의 만남"
-
-    return title_part
 
 # ---------------------------------------------------------
 # 한글 초성 검색용 함수
@@ -77,9 +36,6 @@ def load_data():
     try:
         df = pd.read_csv(csv_file)
         df = df.fillna("")
-        
-        # 표시용제목 정제 및 세팅
-        df["표시용제목"] = df.apply(clean_title, axis=1)
         return df
     except Exception as e:
         st.error(f"데이터 파일({csv_file})을 불러오지 못했습니다: {e}")
@@ -154,7 +110,7 @@ if not df.empty:
         # --- 메인 검색창 ---
         st.markdown("### 🔎 키워드 직접 검색")
         search_query = st.text_input(
-            "작가명, 도서/강연 제목, 주제어 또는 초성(예: ㄱㄱㅅ, ㅂㅎㄴ)으로 검색하세요",
+            "도서/강연 제목, 작가명, 주제어 또는 초성(예: ㄱㄱㅅ, ㅂㅎㄴ)으로 검색하세요",
             "",
             key="search_input"
         )
@@ -179,17 +135,17 @@ if not df.empty:
             q = search_query.strip()
             
             if is_chosung_query(q):
+                filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
-                filtered_df["제목_초성"] = filtered_df["표시용제목"].apply(get_chosung)
                 
                 filtered_df = filtered_df[
-                    filtered_df["작가_초성"].str.contains(q, case=False, na=False) |
-                    filtered_df["제목_초성"].str.contains(q, case=False, na=False)
+                    filtered_df["제목_초성"].str.contains(q, case=False, na=False) |
+                    filtered_df["작가_초성"].str.contains(q, case=False, na=False)
                 ]
             else:
                 filtered_df = filtered_df[
+                    filtered_df["도서/강연제목"].str.contains(q, case=False, na=False) |
                     filtered_df["작가"].str.contains(q, case=False, na=False) |
-                    filtered_df["표시용제목"].str.contains(q, case=False, na=False) |
                     filtered_df["주제/소개"].str.contains(q, case=False, na=False) |
                     filtered_df["대상"].str.contains(q, case=False, na=False)
                 ]
@@ -218,14 +174,13 @@ if not df.empty:
                 
                 img_col_name = "썸네일URL" if "썸네일URL" in filtered_df.columns else ("이미지URL" if "이미지URL" in filtered_df.columns else None)
                 
-                display_cols = ["표시용제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                display_cols = ["도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
                 if img_col_name:
                     display_cols.insert(0, img_col_name)
 
                 show_df = filtered_df[display_cols].reset_index(drop=True)
 
                 col_config = {
-                    "표시용제목": st.column_config.TextColumn("도서/강연제목"),
                     "상세페이지": st.column_config.LinkColumn("상세페이지 링크", display_text="👉 신청하기")
                 }
                 if img_col_name:
@@ -270,7 +225,7 @@ if not df.empty:
                 current_batch = filtered_df.iloc[start_idx:end_idx]
 
                 for idx, row in current_batch.iterrows():
-                    display_title = row['표시용제목']
+                    display_title = row['도서/강연제목']
                     img_url = row.get('썸네일URL', row.get('이미지URL', ''))
 
                     with st.container():
