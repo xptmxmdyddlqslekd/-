@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import math
-import urllib.parse
 
 # 페이지 기본 설정
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
@@ -144,7 +143,6 @@ if not df.empty:
         if search_query.strip():
             q = search_query.strip()
             
-            # 초성 검색 처리
             if is_chosung_query(q):
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
                 filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
@@ -161,115 +159,173 @@ if not df.empty:
                     filtered_df["대상"].str.contains(q, case=False, na=False)
                 ]
 
-        # --- 검색 결과 출력 ---
+        # --- 검색 결과 헤더 및 보기 옵션 ---
         st.markdown("---")
         
         if len(filtered_df) == 0:
             st.subheader("총 0건의 강연이 검색되었습니다.")
             st.info("검색 조건에 일치하는 결과가 없습니다. 필터를 조정해 보세요.")
         else:
-            items_per_page = 10
-            total_pages = math.ceil(len(filtered_df) / items_per_page)
-
-            if st.session_state.current_page > total_pages:
-                st.session_state.current_page = 1
-
-            # 헤더 및 컨트롤
-            head_col1, head_col2 = st.columns([3, 1])
-            with head_col1:
-                st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다. (페이지 {st.session_state.current_page} / {total_pages})")
+            top_col1, top_col2 = st.columns([3, 2])
+            with top_col1:
+                st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
             
-            with head_col2:
-                target_p = st.number_input(
-                    "🎯 페이지 바로 이동", 
-                    min_value=1, 
-                    max_value=total_pages, 
-                    value=st.session_state.current_page,
-                    step=1,
-                    key="direct_page_input"
+            with top_col2:
+                # 💡 보기 방식 선택 (카드형 vs 표/한눈에 보기)
+                view_mode = st.radio(
+                    "📱 보기 방식 선택",
+                    ["📋 한눈에 보기 (엑셀 표 형태)", "🎴 상세 보기 (카드 형태)"],
+                    horizontal=True,
+                    key="view_mode"
                 )
-                if target_p != st.session_state.current_page:
-                    st.session_state.current_page = target_p
-                    st.rerun()
 
-            start_idx = (st.session_state.current_page - 1) * items_per_page
-            end_idx = start_idx + items_per_page
+            # ==================== [MODE 1] 표 형태 (한눈에 보기) ====================
+            if "표 형태" in view_mode:
+                st.markdown("##### 💡 검색된 결과를 엑셀처럼 한눈에 조회합니다.")
+                
+                # 표에 보여줄 주요 컬럼 정렬
+                display_cols = ["도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                show_df = filtered_df[display_cols].reset_index(drop=True)
 
-            current_batch = filtered_df.iloc[start_idx:end_idx]
+                # Streamlit dataframe으로 링크 클릭 가능하게 출력
+                st.dataframe(
+                    show_df,
+                    use_container_width=True,
+                    height=550,
+                    column_config={
+                        "상세페이지": st.column_config.LinkColumn(
+                            "상세페이지 링크",
+                            display_text="👉 신청하기"
+                        )
+                    }
+                )
 
-            # 목록 카드 출력
-            for idx, row in current_batch.iterrows():
-                with st.container():
-                    st.markdown(f"#### 📖 {row['도서/강연제목']}")
+                # 표에서 바로 선택하여 보관함에 담기 기능
+                with st.expander("⭐ 표 검색 결과에서 원하는 강연 보관함에 담기"):
+                    title_options = show_df["도서/강연제목"].tolist()
+                    selected_titles = st.multiselect("보관할 강연 제목을 선택하세요", options=title_options)
                     
-                    col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
-                    with col1:
-                        st.write(f"**✍️ 작가:** {row['작가'] if row['작가'] else '미기재'}")
-                        st.write(f"**🏢 출판사:** {row['출판사']}")
-                    with col2:
-                        st.write(f"**🎯 대상:** {row['대상'] if row['대상'] else '전체/미지정'}")
-                        st.write(f"**💻 강연 방식:** {row['강연방식'] if row['강연방식'] else '대면'}")
-                    with col3:
-                        url = str(row['상세페이지']).strip()
-                        if url and url.startswith("http"):
-                            st.link_button("👉 상세/신청", url)
-                        else:
-                            st.caption("상세링크 없음")
-                    with col4:
-                        # 즐겨찾기(보관) 버튼
-                        item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
-                        is_bookmarked = item_id in [b.get('id') for b in st.session_state.bookmarks]
-                        
-                        btn_label = "⭐ 보관됨" if is_bookmarked else "☆ 보관하기"
-                        if st.button(btn_label, key=f"bm_{idx}"):
-                            if is_bookmarked:
-                                st.session_state.bookmarks = [b for b in st.session_state.bookmarks if b.get('id') != item_id]
-                            else:
-                                st.session_state.bookmarks.append({
-                                    "id": item_id,
-                                    "제목": row['도서/강연제목'],
-                                    "작가": row['작가'],
-                                    "출판사": row['출판사'],
-                                    "대상": row['대상'],
-                                    "강연방식": row['강연방식'],
-                                    "상세페이지": row['상세페이지']
-                                })
-                            st.rerun()
+                    if st.button("선택한 강연 보관함에 추가"):
+                        added_count = 0
+                        for t in selected_titles:
+                            matched_rows = filtered_df[filtered_df["도서/강연제목"] == t]
+                            for _, r in matched_rows.iterrows():
+                                item_id = f"{r['출판사']}_{r['작가']}_{r['도서/강연제목']}"
+                                if item_id not in [b.get('id') for b in st.session_state.bookmarks]:
+                                    st.session_state.bookmarks.append({
+                                        "id": item_id,
+                                        "제목": r['도서/강연제목'],
+                                        "작가": r['작가'],
+                                        "출판사": r['출판사'],
+                                        "대상": r['대상'],
+                                        "강연방식": r['강연방식'],
+                                        "상세페이지": r['상세페이지']
+                                    })
+                                    added_count += 1
+                        st.success(f"{added_count}개의 강연이 보관함에 추가되었습니다!")
 
-                    if row['주제/소개']:
-                        st.caption(f"💡 주제/소개: {row['주제/소개']}")
-                    
-                    st.divider()
+            # ==================== [MODE 2] 카드 형태 (기존 방식) ====================
+            else:
+                items_per_page = 10
+                total_pages = math.ceil(len(filtered_df) / items_per_page)
 
-            # --- 하단 페이지 1~10 단추 ---
-            st.markdown("<br>", unsafe_allow_html=True)
-            max_visible_buttons = 10
-            curr = st.session_state.current_page
-            
-            start_page = max(1, curr - max_visible_buttons // 2)
-            end_page = min(total_pages, start_page + max_visible_buttons - 1)
-            if end_page - start_page + 1 < max_visible_buttons:
-                start_page = max(1, end_page - max_visible_buttons + 1)
+                if st.session_state.current_page > total_pages:
+                    st.session_state.current_page = 1
 
-            btn_cols = st.columns(end_page - start_page + 3)
-
-            with btn_cols[0]:
-                if st.button("◀ 이전", disabled=(curr == 1)):
-                    st.session_state.current_page -= 1
-                    st.rerun()
-
-            for i, p_num in enumerate(range(start_page, end_page + 1)):
-                with btn_cols[i + 1]:
-                    is_current = (p_num == curr)
-                    label = f"**[{p_num}]**" if is_current else f"{p_num}"
-                    if st.button(label, key=f"page_btn_{p_num}"):
-                        st.session_state.current_page = p_num
+                head_col1, head_col2 = st.columns([3, 1])
+                with head_col1:
+                    st.caption(f"페이지 {st.session_state.current_page} / {total_pages}")
+                
+                with head_col2:
+                    target_p = st.number_input(
+                        "🎯 페이지 바로 이동", 
+                        min_value=1, 
+                        max_value=total_pages, 
+                        value=st.session_state.current_page,
+                        step=1,
+                        key="direct_page_input"
+                    )
+                    if target_p != st.session_state.current_page:
+                        st.session_state.current_page = target_p
                         st.rerun()
 
-            with btn_cols[-1]:
-                if st.button("다음 ▶", disabled=(curr == total_pages)):
-                    st.session_state.current_page += 1
-                    st.rerun()
+                start_idx = (st.session_state.current_page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+
+                current_batch = filtered_df.iloc[start_idx:end_idx]
+
+                # 카드 목록 출력
+                for idx, row in current_batch.iterrows():
+                    with st.container():
+                        st.markdown(f"#### 📖 {row['도서/강연제목']}")
+                        
+                        col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
+                        with col1:
+                            st.write(f"**✍️ 작가:** {row['작가'] if row['작가'] else '미기재'}")
+                            st.write(f"**🏢 출판사:** {row['출판사']}")
+                        with col2:
+                            st.write(f"**🎯 대상:** {row['대상'] if row['대상'] else '전체/미지정'}")
+                            st.write(f"**💻 강연 방식:** {row['강연방식'] if row['강연방식'] else '대면'}")
+                        with col3:
+                            url = str(row['상세페이지']).strip()
+                            if url and url.startswith("http"):
+                                st.link_button("👉 상세/신청", url)
+                            else:
+                                st.caption("상세링크 없음")
+                        with col4:
+                            item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
+                            is_bookmarked = item_id in [b.get('id') for b in st.session_state.bookmarks]
+                            
+                            btn_label = "⭐ 보관됨" if is_bookmarked else "☆ 보관하기"
+                            if st.button(btn_label, key=f"bm_{idx}"):
+                                if is_bookmarked:
+                                    st.session_state.bookmarks = [b for b in st.session_state.bookmarks if b.get('id') != item_id]
+                                else:
+                                    st.session_state.bookmarks.append({
+                                        "id": item_id,
+                                        "제목": row['도서/강연제목'],
+                                        "작가": row['작가'],
+                                        "출판사": row['출판사'],
+                                        "대상": row['대상'],
+                                        "강연방식": row['강연방식'],
+                                        "상세페이지": row['상세페이지']
+                                    })
+                                st.rerun()
+
+                        if row['주제/소개']:
+                            st.caption(f"💡 주제/소개: {row['주제/소개']}")
+                        
+                        st.divider()
+
+                # 하단 1~10 단추
+                st.markdown("<br>", unsafe_allow_html=True)
+                max_visible_buttons = 10
+                curr = st.session_state.current_page
+                
+                start_page = max(1, curr - max_visible_buttons // 2)
+                end_page = min(total_pages, start_page + max_visible_buttons - 1)
+                if end_page - start_page + 1 < max_visible_buttons:
+                    start_page = max(1, end_page - max_visible_buttons + 1)
+
+                btn_cols = st.columns(end_page - start_page + 3)
+
+                with btn_cols[0]:
+                    if st.button("◀ 이전", disabled=(curr == 1)):
+                        st.session_state.current_page -= 1
+                        st.rerun()
+
+                for i, p_num in enumerate(range(start_page, end_page + 1)):
+                    with btn_cols[i + 1]:
+                        is_current = (p_num == curr)
+                        label = f"**[{p_num}]**" if is_current else f"{p_num}"
+                        if st.button(label, key=f"page_btn_{p_num}"):
+                            st.session_state.current_page = p_num
+                            st.rerun()
+
+                with btn_cols[-1]:
+                    if st.button("다음 ▶", disabled=(curr == total_pages)):
+                        st.session_state.current_page += 1
+                        st.rerun()
 
     # ==================== TAB 2: 내 보관함 ====================
     with tab2:
@@ -277,7 +333,7 @@ if not df.empty:
         st.write("검색하며 담아둔 강연 목록입니다. 보고서 작성이나 인쇄용으로 활용하세요.")
 
         if not st.session_state.bookmarks:
-            st.info("아직 보관된 강연이 없습니다. 검색 결과에서 '☆ 보관하기' 버튼을 눌러보세요.")
+            st.info("아직 보관된 강연이 없습니다. 검색 결과에서 보관하기 버튼을 눌러보세요.")
         else:
             bm_df = pd.DataFrame(st.session_state.bookmarks)
             
