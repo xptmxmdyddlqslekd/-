@@ -7,35 +7,44 @@ import re
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
 
 # ---------------------------------------------------------
-# 제목 정제 (제목 미기재 시 텍스트 파싱)
+# 제목 정제 (작가명 및 도서명 조합 보완)
 # ---------------------------------------------------------
 def clean_title(row):
-    # 1. 이미 표시용제목이 존재하면 해당 값 사용
-    if "표시용제목" in row and str(row["표시용제목"]).strip():
-        return str(row["표시용제목"]).strip()
-    
-    # 2. 도서/강연제목 컬럼에서 파싱
+    author = str(row.get("작가", "")).strip()
     raw_title = str(row.get("도서/강연제목", "")).strip()
-    if not raw_title:
-        return "제목 없음"
     
-    # '｜' 구분자가 있는 경우 (예: [대상] 작가｜도서제목(온라인...))
-    if "｜" in raw_title:
-        title_part = raw_title.split("｜")[-1]
-    elif "|" in raw_title:
-        title_part = raw_title.split("|")[-1]
-    else:
-        # [대상] 문구 제거
-        title_part = re.sub(r"^\[.*?\]\s*", "", raw_title)
-        # 작가명 제거 (작가 컬럼 값이 존재할 경우)
-        author = str(row.get("작가", "")).strip()
-        if author and author in title_part:
-            title_part = title_part.replace(author, "").strip()
+    # 이미 잘 정제된 표시용제목이 존재하는 경우
+    if "표시용제목" in row and str(row["표시용제목"]).strip():
+        display_t = str(row["표시용제목"]).strip()
+        # 표시용제목에도 '작가와의 만남'만 홀로 남아있다면 작가명 결합
+        if re.sub(r"\s+", "", display_t) in ["작가와의만남", "작가와의만남(온라인강연가능)", "작가와의만남(대면)"]:
+            return f"{author} 작가와의 만남" if author else display_t
+        return display_t
 
-    # (온라인 강연 가능), (대면 강연) 등의 괄호문구 정제
-    title_part = re.sub(r"\(.*?\)", "", title_part).strip()
-    
-    return title_part if title_part else raw_title
+    if not raw_title:
+        return f"{author} 작가 강연" if author else "제목 미기재"
+
+    # '｜' 또는 '|' 구분자 처리
+    if "｜" in raw_title:
+        parts = raw_title.split("｜")
+    elif "|" in raw_title:
+        parts = raw_title.split("|")
+    else:
+        parts = [raw_title]
+
+    # 구분자 뒤의 텍스트 추출 및 정제
+    title_part = parts[-1].strip()
+    title_part = re.sub(r"\(.*?\)", "", title_part).strip() # (온라인 강연 가능) 등 괄호 제거
+    title_part = re.sub(r"^\[.*?\]\s*", "", title_part).strip() # [유아, 어린이] 등 대괄호 제거
+
+    # 도서명이 '작가와의 만남'으로만 되어 있거나 비어있는 경우 작가명 결합
+    pure_title = re.sub(r"\s+", "", title_part)
+    if pure_title in ["작가와의만남", ""] or pure_title.startswith("작가와의만남"):
+        if author:
+            return f"{author} 작가와의 만남"
+        return "작가와의 만남"
+
+    return title_part
 
 # ---------------------------------------------------------
 # 한글 초성 검색용 함수
@@ -69,7 +78,7 @@ def load_data():
         df = pd.read_csv(csv_file)
         df = df.fillna("")
         
-        # 표시용제목 정제 및 생성
+        # 표시용제목 정제 및 세팅
         df["표시용제목"] = df.apply(clean_title, axis=1)
         return df
     except Exception as e:
