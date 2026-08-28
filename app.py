@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import math
 
 # 페이지 기본 설정
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
@@ -20,20 +21,23 @@ def load_data():
 
 df = load_data()
 
+# 페이지 상태(session_state) 초기화
+if "current_page" not in st.session_state:
+    st.session_state.current_page = 1
+
 if not df.empty:
-    # 탭 구성: [강연 검색] / [원본 데이터 확인]
     tab1, tab2 = st.tabs(["🔍 강연 검색하기", "📄 원본 데이터 보기 및 다운로드"])
 
     # ==================== TAB 1: 강연 검색 ====================
     with tab1:
         st.sidebar.header("🎛️ 조건별 필터")
 
-        # 1. 출판사 필터 (처음 접속 시 아무것도 선택되지 않음)
+        # 1. 출판사 필터 (기본 선택 없음)
         all_publishers = sorted([p for p in df["출판사"].unique() if p])
         selected_publisher = st.sidebar.multiselect(
             "🏢 출판사 선택 (선택 안 함 = 전체)",
             options=all_publishers,
-            default=[]  # 기본 선택 없음
+            default=[]
         )
 
         # 2. 대상(나이대) 필터
@@ -66,25 +70,20 @@ if not df.empty:
         # --- 데이터 필터링 조건 적용 ---
         filtered_df = df.copy()
 
-        # 출판사 선택이 있는 경우만 필터링 (선택 없으면 전체 포함)
         if selected_publisher:
             filtered_df = filtered_df[filtered_df["출판사"].isin(selected_publisher)]
 
-        # 대상 필터 적용 (다중 선택 처리)
         if selected_targets:
             target_pattern = "|".join(selected_targets)
             filtered_df = filtered_df[filtered_df["대상"].str.contains(target_pattern, na=False)]
 
-        # 주제 필터 적용
         if selected_topics:
             topic_pattern = "|".join(selected_topics)
             filtered_df = filtered_df[filtered_df["주제/소개"].str.contains(topic_pattern, na=False)]
 
-        # 강연 방식 필터
         if selected_method != "전체":
             filtered_df = filtered_df[filtered_df["강연방식"].str.contains(selected_method, na=False)]
 
-        # 검색어 입력 필터
         if search_query.strip():
             q = search_query.strip()
             filtered_df = filtered_df[
@@ -102,17 +101,18 @@ if not df.empty:
             st.info("검색 조건에 일치하는 결과가 없습니다. 필터를 조정해 보세요.")
         else:
             items_per_page = 10
-            total_pages = (len(filtered_df) - 1) // items_per_page + 1
-            
-            page_col1, page_col2 = st.columns([1, 4])
-            with page_col1:
-                page = st.number_input("페이지 선택", min_value=1, max_value=total_pages, value=1, step=1)
+            total_pages = math.ceil(len(filtered_df) / items_per_page)
 
-            start_idx = (page - 1) * items_per_page
+            # 현재 페이지 범위 검증
+            if st.session_state.current_page > total_pages:
+                st.session_state.current_page = 1
+
+            start_idx = (st.session_state.current_page - 1) * items_per_page
             end_idx = start_idx + items_per_page
 
             current_batch = filtered_df.iloc[start_idx:end_idx]
 
+            # 목록 출력
             for idx, row in current_batch.iterrows():
                 with st.container():
                     st.markdown(f"#### 📖 {row['도서/강연제목']}")
@@ -136,12 +136,48 @@ if not df.empty:
                     
                     st.divider()
 
+            # ==================== 하단 페이지 단추 (Pagination) ====================
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 최대 5개의 페이지 번호 버튼만 표시되도록 계산
+            max_visible_buttons = 5
+            curr = st.session_state.current_page
+            
+            start_page = max(1, curr - max_visible_buttons // 2)
+            end_page = min(total_pages, start_page + max_visible_buttons - 1)
+            if end_page - start_page + 1 < max_visible_buttons:
+                start_page = max(1, end_page - max_visible_buttons + 1)
+
+            # 버튼들을 가로로 나열
+            btn_cols = st.columns(end_page - start_page + 3)
+
+            # 1) [◀ 이전] 버튼
+            with btn_cols[0]:
+                if st.button("◀ 이전", disabled=(curr == 1)):
+                    st.session_state.current_page -= 1
+                    st.rerun()
+
+            # 2) [1] [2] [3] ... 숫자 버튼
+            for i, p_num in enumerate(range(start_page, end_page + 1)):
+                with btn_cols[i + 1]:
+                    # 현재 보고 있는 페이지는 강조 표시
+                    is_current = (p_num == curr)
+                    label = f"**[{p_num}]**" if is_current else f"{p_num}"
+                    if st.button(label, key=f"page_btn_{p_num}"):
+                        st.session_state.current_page = p_num
+                        st.rerun()
+
+            # 3) [다음 ▶] 버튼
+            with btn_cols[-1]:
+                if st.button("다음 ▶", disabled=(curr == total_pages)):
+                    st.session_state.current_page += 1
+                    st.rerun()
+
     # ==================== TAB 2: 원본 데이터 보기 ====================
     with tab2:
         st.markdown("### 📊 베이스 데이터 전체 목록 (총 2,644건)")
         st.write("통합 데이터베이스의 전체 항목을 표 형태로 조회하고 CSV 파일로 다운로드할 수 있습니다.")
 
-        # CSV 다운로드 버튼
         csv_data = df.to_csv(index=False, encoding="utf-8-sig")
         st.download_button(
             label="📥 원본 데이터 (CSV) 다운로드",
