@@ -6,7 +6,7 @@ import math
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
 
 # ---------------------------------------------------------
-# 한글 초성 검색용 함수 (초성 추출)
+# 한글 초성 검색용 함수
 # ---------------------------------------------------------
 CHO_LIST = [
     'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ',
@@ -62,7 +62,6 @@ if not df.empty:
         # --- 사이드바 필터 ---
         st.sidebar.header("🎛️ 조건별 필터")
 
-        # 필터 초기화 버튼
         if st.sidebar.button("🔄 모든 필터 초기화", use_container_width=True):
             st.session_state.clear()
             st.session_state.current_page = 1
@@ -71,7 +70,6 @@ if not df.empty:
 
         st.sidebar.markdown("---")
 
-        # 1. 출판사 필터
         all_publishers = sorted([p for p in df["출판사"].unique() if p])
         selected_publisher = st.sidebar.multiselect(
             "🏢 출판사 선택 (선택 안 함 = 전체)",
@@ -80,11 +78,7 @@ if not df.empty:
             key="filter_pub"
         )
 
-        # 2. 세부 대상(학년별) 필터
-        target_options = [
-            "유아", "저학년", "중학년", "고학년", "초등", 
-            "청소년", "성인", "교사"
-        ]
+        target_options = ["유아", "저학년", "중학년", "고학년", "초등", "청소년", "성인", "교사"]
         selected_targets = st.sidebar.multiselect(
             "🎯 강연 대상 선택",
             options=target_options,
@@ -92,7 +86,6 @@ if not df.empty:
             key="filter_target"
         )
 
-        # 3. 주제/분야 필터
         topic_options = ["그림책", "문학", "창작", "교양/문화", "사회", "인문", "과학", "환경", "역사"]
         selected_topics = st.sidebar.multiselect(
             "🏷️ 주요 주제 선택",
@@ -101,7 +94,6 @@ if not df.empty:
             key="filter_topic"
         )
 
-        # 4. 강연 방식 필터
         methods = ["전체", "비대면", "대면"]
         selected_method = st.sidebar.radio("💻 강연 방식", options=methods, index=0, key="filter_method")
 
@@ -118,31 +110,24 @@ if not df.empty:
             key="search_input"
         )
 
-        # --- 데이터 필터링 조건 적용 ---
         filtered_df = df.copy()
 
-        # 출판사 필터
         if selected_publisher:
             filtered_df = filtered_df[filtered_df["출판사"].isin(selected_publisher)]
 
-        # 대상 필터
         if selected_targets:
             target_pattern = "|".join(selected_targets)
             filtered_df = filtered_df[filtered_df["대상"].str.contains(target_pattern, na=False)]
 
-        # 주제 필터
         if selected_topics:
             topic_pattern = "|".join(selected_topics)
             filtered_df = filtered_df[filtered_df["주제/소개"].str.contains(topic_pattern, na=False)]
 
-        # 강연 방식 필터
         if selected_method != "전체":
             filtered_df = filtered_df[filtered_df["강연방식"].str.contains(selected_method, na=False)]
 
-        # 키워드 및 초성 검색 필터
         if search_query.strip():
             q = search_query.strip()
-            
             if is_chosung_query(q):
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
                 filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
@@ -159,7 +144,6 @@ if not df.empty:
                     filtered_df["대상"].str.contains(q, case=False, na=False)
                 ]
 
-        # --- 검색 결과 헤더 및 보기 옵션 ---
         st.markdown("---")
         
         if len(filtered_df) == 0:
@@ -171,7 +155,6 @@ if not df.empty:
                 st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
             
             with top_col2:
-                # 💡 보기 방식 선택 (카드형 vs 표/한눈에 보기)
                 view_mode = st.radio(
                     "📱 보기 방식 선택",
                     ["📋 한눈에 보기 (엑셀 표 형태)", "🎴 상세 보기 (카드 형태)"],
@@ -179,52 +162,31 @@ if not df.empty:
                     key="view_mode"
                 )
 
-            # ==================== [MODE 1] 표 형태 (한눈에 보기) ====================
+            # ==================== [MODE 1] 표 형태 ====================
             if "표 형태" in view_mode:
                 st.markdown("##### 💡 검색된 결과를 엑셀처럼 한눈에 조회합니다.")
                 
-                # 표에 보여줄 주요 컬럼 정렬
+                # 이미지URL 컬럼이 있으면 표에 추가
                 display_cols = ["도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                if "이미지URL" in filtered_df.columns:
+                    display_cols.insert(0, "이미지URL")
+
                 show_df = filtered_df[display_cols].reset_index(drop=True)
 
-                # Streamlit dataframe으로 링크 클릭 가능하게 출력
+                col_config = {
+                    "상세페이지": st.column_config.LinkColumn("상세페이지 링크", display_text="👉 신청하기")
+                }
+                if "이미지URL" in show_df.columns:
+                    col_config["이미지URL"] = st.column_config.ImageColumn("표지", help="도서 표지 썸네일")
+
                 st.dataframe(
                     show_df,
                     use_container_width=True,
                     height=550,
-                    column_config={
-                        "상세페이지": st.column_config.LinkColumn(
-                            "상세페이지 링크",
-                            display_text="👉 신청하기"
-                        )
-                    }
+                    column_config=col_config
                 )
 
-                # 표에서 바로 선택하여 보관함에 담기 기능
-                with st.expander("⭐ 표 검색 결과에서 원하는 강연 보관함에 담기"):
-                    title_options = show_df["도서/강연제목"].tolist()
-                    selected_titles = st.multiselect("보관할 강연 제목을 선택하세요", options=title_options)
-                    
-                    if st.button("선택한 강연 보관함에 추가"):
-                        added_count = 0
-                        for t in selected_titles:
-                            matched_rows = filtered_df[filtered_df["도서/강연제목"] == t]
-                            for _, r in matched_rows.iterrows():
-                                item_id = f"{r['출판사']}_{r['작가']}_{r['도서/강연제목']}"
-                                if item_id not in [b.get('id') for b in st.session_state.bookmarks]:
-                                    st.session_state.bookmarks.append({
-                                        "id": item_id,
-                                        "제목": r['도서/강연제목'],
-                                        "작가": r['작가'],
-                                        "출판사": r['출판사'],
-                                        "대상": r['대상'],
-                                        "강연방식": r['강연방식'],
-                                        "상세페이지": r['상세페이지']
-                                    })
-                                    added_count += 1
-                        st.success(f"{added_count}개의 강연이 보관함에 추가되었습니다!")
-
-            # ==================== [MODE 2] 카드 형태 (기존 방식) ====================
+            # ==================== [MODE 2] 카드 형태 ====================
             else:
                 items_per_page = 10
                 total_pages = math.ceil(len(filtered_df) / items_per_page)
@@ -254,12 +216,20 @@ if not df.empty:
 
                 current_batch = filtered_df.iloc[start_idx:end_idx]
 
-                # 카드 목록 출력
                 for idx, row in current_batch.iterrows():
                     with st.container():
                         st.markdown(f"#### 📖 {row['도서/강연제목']}")
                         
-                        col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
+                        # 표지 이미지 유무에 따른 컬럼 레이아웃 분기
+                        has_img = "이미지URL" in row and str(row['이미지URL']).startswith("http")
+                        
+                        if has_img:
+                            img_col, col1, col2, col3, col4 = st.columns([1, 2.5, 2, 1.2, 1])
+                            with img_col:
+                                st.image(row['이미지URL'], width=90)
+                        else:
+                            col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
+
                         with col1:
                             st.write(f"**✍️ 작가:** {row['작가'] if row['작가'] else '미기재'}")
                             st.write(f"**🏢 출판사:** {row['출판사']}")
@@ -297,7 +267,7 @@ if not df.empty:
                         
                         st.divider()
 
-                # 하단 1~10 단추
+                # 하단 페이지 1~10 단추
                 st.markdown("<br>", unsafe_allow_html=True)
                 max_visible_buttons = 10
                 curr = st.session_state.current_page
