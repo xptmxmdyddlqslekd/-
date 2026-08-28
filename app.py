@@ -1,9 +1,41 @@
 import streamlit as st
 import pandas as pd
 import math
+import re
 
 # 페이지 기본 설정
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
+
+# ---------------------------------------------------------
+# 제목 정제 (제목 미기재 시 텍스트 파싱)
+# ---------------------------------------------------------
+def clean_title(row):
+    # 1. 이미 표시용제목이 존재하면 해당 값 사용
+    if "표시용제목" in row and str(row["표시용제목"]).strip():
+        return str(row["표시용제목"]).strip()
+    
+    # 2. 도서/강연제목 컬럼에서 파싱
+    raw_title = str(row.get("도서/강연제목", "")).strip()
+    if not raw_title:
+        return "제목 없음"
+    
+    # '｜' 구분자가 있는 경우 (예: [대상] 작가｜도서제목(온라인...))
+    if "｜" in raw_title:
+        title_part = raw_title.split("｜")[-1]
+    elif "|" in raw_title:
+        title_part = raw_title.split("|")[-1]
+    else:
+        # [대상] 문구 제거
+        title_part = re.sub(r"^\[.*?\]\s*", "", raw_title)
+        # 작가명 제거 (작가 컬럼 값이 존재할 경우)
+        author = str(row.get("작가", "")).strip()
+        if author and author in title_part:
+            title_part = title_part.replace(author, "").strip()
+
+    # (온라인 강연 가능), (대면 강연) 등의 괄호문구 정제
+    title_part = re.sub(r"\(.*?\)", "", title_part).strip()
+    
+    return title_part if title_part else raw_title
 
 # ---------------------------------------------------------
 # 한글 초성 검색용 함수
@@ -28,7 +60,7 @@ def is_chosung_query(query):
     return all(c in CHO_LIST or c.isspace() for c in query)
 
 # ---------------------------------------------------------
-# 데이터 로드 (기존 파일명 integrated_author_events.csv 사용)
+# 데이터 로드
 # ---------------------------------------------------------
 @st.cache_data
 def load_data():
@@ -36,6 +68,9 @@ def load_data():
     try:
         df = pd.read_csv(csv_file)
         df = df.fillna("")
+        
+        # 표시용제목 정제 및 생성
+        df["표시용제목"] = df.apply(clean_title, axis=1)
         return df
     except Exception as e:
         st.error(f"데이터 파일({csv_file})을 불러오지 못했습니다: {e}")
@@ -48,6 +83,10 @@ if "current_page" not in st.session_state:
     st.session_state.current_page = 1
 if "bookmarks" not in st.session_state:
     st.session_state.bookmarks = []
+
+# 페이지 변경 함수
+def set_page(page_num):
+    st.session_state.current_page = page_num
 
 # ---------------------------------------------------------
 # 메인 화면
@@ -129,11 +168,10 @@ if not df.empty:
 
         if search_query.strip():
             q = search_query.strip()
-            title_col = "표시용제목" if "표시용제목" in filtered_df.columns else "도서/강연제목"
             
             if is_chosung_query(q):
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
-                filtered_df["제목_초성"] = filtered_df[title_col].apply(get_chosung)
+                filtered_df["제목_초성"] = filtered_df["표시용제목"].apply(get_chosung)
                 
                 filtered_df = filtered_df[
                     filtered_df["작가_초성"].str.contains(q, case=False, na=False) |
@@ -142,7 +180,7 @@ if not df.empty:
             else:
                 filtered_df = filtered_df[
                     filtered_df["작가"].str.contains(q, case=False, na=False) |
-                    filtered_df[title_col].str.contains(q, case=False, na=False) |
+                    filtered_df["표시용제목"].str.contains(q, case=False, na=False) |
                     filtered_df["주제/소개"].str.contains(q, case=False, na=False) |
                     filtered_df["대상"].str.contains(q, case=False, na=False)
                 ]
@@ -169,16 +207,16 @@ if not df.empty:
             if "표 형태" in view_mode:
                 st.markdown("##### 💡 검색된 결과를 엑셀처럼 한눈에 조회합니다.")
                 
-                title_col_name = "표시용제목" if "표시용제목" in filtered_df.columns else "도서/강연제목"
                 img_col_name = "썸네일URL" if "썸네일URL" in filtered_df.columns else ("이미지URL" if "이미지URL" in filtered_df.columns else None)
                 
-                display_cols = [title_col_name, "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                display_cols = ["표시용제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
                 if img_col_name:
                     display_cols.insert(0, img_col_name)
 
                 show_df = filtered_df[display_cols].reset_index(drop=True)
 
                 col_config = {
+                    "표시용제목": st.column_config.TextColumn("도서/강연제목"),
                     "상세페이지": st.column_config.LinkColumn("상세페이지 링크", display_text="👉 신청하기")
                 }
                 if img_col_name:
@@ -197,24 +235,25 @@ if not df.empty:
                 total_pages = math.ceil(len(filtered_df) / items_per_page)
 
                 if st.session_state.current_page > total_pages:
-                    st.session_state.current_page = 1
+                    st.session_state.current_page = max(1, total_pages)
 
                 head_col1, head_col2 = st.columns([3, 1])
                 with head_col1:
                     st.caption(f"페이지 {st.session_state.current_page} / {total_pages}")
                 
                 with head_col2:
-                    target_p = st.number_input(
+                    def on_number_input_change():
+                        st.session_state.current_page = st.session_state.direct_page_input
+
+                    st.number_input(
                         "🎯 페이지 바로 이동", 
                         min_value=1, 
-                        max_value=total_pages, 
+                        max_value=max(1, total_pages), 
                         value=st.session_state.current_page,
                         step=1,
-                        key="direct_page_input"
+                        key="direct_page_input",
+                        on_change=on_number_input_change
                     )
-                    if target_p != st.session_state.current_page:
-                        st.session_state.current_page = target_p
-                        st.rerun()
 
                 start_idx = (st.session_state.current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
@@ -222,7 +261,7 @@ if not df.empty:
                 current_batch = filtered_df.iloc[start_idx:end_idx]
 
                 for idx, row in current_batch.iterrows():
-                    display_title = row.get('표시용제목', row.get('도서/강연제목', ''))
+                    display_title = row['표시용제목']
                     img_url = row.get('썸네일URL', row.get('이미지URL', ''))
 
                     with st.container():
@@ -274,7 +313,7 @@ if not df.empty:
                         
                         st.divider()
 
-                # 하단 페이지 이동 버튼
+                # --- 하단 페이지 이동 버튼 ---
                 st.markdown("<br>", unsafe_allow_html=True)
                 max_visible_buttons = 10
                 curr = st.session_state.current_page
@@ -287,22 +326,33 @@ if not df.empty:
                 btn_cols = st.columns(end_page - start_page + 3)
 
                 with btn_cols[0]:
-                    if st.button("◀ 이전", disabled=(curr == 1)):
-                        st.session_state.current_page -= 1
-                        st.rerun()
+                    st.button(
+                        "◀ 이전", 
+                        disabled=(curr == 1), 
+                        on_click=set_page, 
+                        args=(curr - 1,), 
+                        key="btn_prev"
+                    )
 
                 for i, p_num in enumerate(range(start_page, end_page + 1)):
                     with btn_cols[i + 1]:
                         is_current = (p_num == curr)
                         label = f"**[{p_num}]**" if is_current else f"{p_num}"
-                        if st.button(label, key=f"page_btn_{p_num}"):
-                            st.session_state.current_page = p_num
-                            st.rerun()
+                        st.button(
+                            label, 
+                            on_click=set_page, 
+                            args=(p_num,), 
+                            key=f"page_btn_{p_num}"
+                        )
 
                 with btn_cols[-1]:
-                    if st.button("다음 ▶", disabled=(curr == total_pages)):
-                        st.session_state.current_page += 1
-                        st.rerun()
+                    st.button(
+                        "다음 ▶", 
+                        disabled=(curr >= total_pages), 
+                        on_click=set_page, 
+                        args=(curr + 1,), 
+                        key="btn_next"
+                    )
 
     # ==================== TAB 2: 내 보관함 ====================
     with tab2:
