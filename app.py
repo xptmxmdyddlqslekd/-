@@ -1,14 +1,36 @@
 import streamlit as st
 import pandas as pd
 import math
+import urllib.parse
 
 # 페이지 기본 설정
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
 
-st.title("📚 작가와의 만남 통합 검색 서비스")
-st.caption("출판사, 강연 대상, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.")
+# ---------------------------------------------------------
+# 한글 초성 검색용 함수 (초성 추출)
+# ---------------------------------------------------------
+CHO_LIST = [
+    'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ',
+    'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+]
 
-# 1. 데이터 불러오기
+def get_chosung(text):
+    result = []
+    for char in str(text):
+        if '가' <= char <= '힣':
+            code = ord(char) - 44032
+            cho_idx = code // 588
+            result.append(CHO_LIST[cho_idx])
+        else:
+            result.append(char)
+    return "".join(result)
+
+def is_chosung_query(query):
+    return all(c in CHO_LIST or c.isspace() for c in query)
+
+# ---------------------------------------------------------
+# 데이터 로드
+# ---------------------------------------------------------
 @st.cache_data
 def load_data():
     try:
@@ -21,77 +43,123 @@ def load_data():
 
 df = load_data()
 
-# 페이지 상태(session_state) 초기화
+# Session State 초기화
 if "current_page" not in st.session_state:
     st.session_state.current_page = 1
+if "bookmarks" not in st.session_state:
+    st.session_state.bookmarks = []
+
+# ---------------------------------------------------------
+# 메인 화면
+# ---------------------------------------------------------
+st.title("📚 작가와의 만남 통합 검색 서비스")
+st.caption("출판사, 강연 대상, 세부 학년, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.")
 
 if not df.empty:
-    tab1, tab2 = st.tabs(["🔍 강연 검색하기", "📄 원본 데이터 보기 및 다운로드"])
+    tab1, tab2, tab3 = st.tabs(["🔍 강연 검색하기", "⭐ 내 보관함", "📄 원본 데이터 보기 및 다운로드"])
 
     # ==================== TAB 1: 강연 검색 ====================
     with tab1:
+        # --- 사이드바 필터 ---
         st.sidebar.header("🎛️ 조건별 필터")
 
-        # 1. 출판사 필터 (기본 선택 없음)
+        # 필터 초기화 버튼
+        if st.sidebar.button("🔄 모든 필터 초기화", use_container_width=True):
+            st.session_state.clear()
+            st.session_state.current_page = 1
+            st.session_state.bookmarks = []
+            st.rerun()
+
+        st.sidebar.markdown("---")
+
+        # 1. 출판사 필터
         all_publishers = sorted([p for p in df["출판사"].unique() if p])
         selected_publisher = st.sidebar.multiselect(
             "🏢 출판사 선택 (선택 안 함 = 전체)",
             options=all_publishers,
-            default=[]
+            default=[],
+            key="filter_pub"
         )
 
-        # 2. 대상(나이대) 필터
-        target_options = ["유아", "저학년", "고학년", "초등", "청소년", "성인", "교사"]
+        # 2. 세부 대상(학년별) 필터
+        target_options = [
+            "유아", "저학년", "중학년", "고학년", "초등", 
+            "청소년", "성인", "교사"
+        ]
         selected_targets = st.sidebar.multiselect(
-            "🎯 강연 대상 선택 (선택 안 함 = 전체)",
+            "🎯 강연 대상 선택",
             options=target_options,
-            default=[]
+            default=[],
+            key="filter_target"
         )
 
         # 3. 주제/분야 필터
-        topic_options = ["그림책", "문학", "창작", "교양/문화", "사회", "인문", "과학"]
+        topic_options = ["그림책", "문학", "창작", "교양/문화", "사회", "인문", "과학", "환경", "역사"]
         selected_topics = st.sidebar.multiselect(
-            "🏷️ 주요 주제 선택 (선택 안 함 = 전체)",
+            "🏷️ 주요 주제 선택",
             options=topic_options,
-            default=[]
+            default=[],
+            key="filter_topic"
         )
 
         # 4. 강연 방식 필터
         methods = ["전체", "비대면", "대면"]
-        selected_method = st.sidebar.radio("💻 강연 방식", options=methods, index=0)
+        selected_method = st.sidebar.radio("💻 강연 방식", options=methods, index=0, key="filter_method")
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 💌 제보 및 문의")
+        st.sidebar.caption("수정 사항이나 신규 강연 제보가 있다면 알려주세요.")
+        st.sidebar.markdown("[👉 강연 정보 제보/수정 요청](https://forms.google.com)", unsafe_allow_html=True)
 
         # --- 메인 검색창 ---
         st.markdown("### 🔎 키워드 직접 검색")
         search_query = st.text_input(
-            "작가명, 도서/강연 제목, 세부 주제어 등으로 검색하세요",
-            ""
+            "작가명, 도서/강연 제목, 주제어 또는 초성(예: ㄱㄱㅅ, ㅂㅎㄴ)으로 검색하세요",
+            "",
+            key="search_input"
         )
 
         # --- 데이터 필터링 조건 적용 ---
         filtered_df = df.copy()
 
+        # 출판사 필터
         if selected_publisher:
             filtered_df = filtered_df[filtered_df["출판사"].isin(selected_publisher)]
 
+        # 대상 필터
         if selected_targets:
             target_pattern = "|".join(selected_targets)
             filtered_df = filtered_df[filtered_df["대상"].str.contains(target_pattern, na=False)]
 
+        # 주제 필터
         if selected_topics:
             topic_pattern = "|".join(selected_topics)
             filtered_df = filtered_df[filtered_df["주제/소개"].str.contains(topic_pattern, na=False)]
 
+        # 강연 방식 필터
         if selected_method != "전체":
             filtered_df = filtered_df[filtered_df["강연방식"].str.contains(selected_method, na=False)]
 
+        # 키워드 및 초성 검색 필터
         if search_query.strip():
             q = search_query.strip()
-            filtered_df = filtered_df[
-                filtered_df["작가"].str.contains(q, case=False, na=False) |
-                filtered_df["도서/강연제목"].str.contains(q, case=False, na=False) |
-                filtered_df["주제/소개"].str.contains(q, case=False, na=False) |
-                filtered_df["대상"].str.contains(q, case=False, na=False)
-            ]
+            
+            # 초성 검색 처리
+            if is_chosung_query(q):
+                filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
+                filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
+                
+                filtered_df = filtered_df[
+                    filtered_df["작가_초성"].str.contains(q, case=False, na=False) |
+                    filtered_df["제목_초성"].str.contains(q, case=False, na=False)
+                ]
+            else:
+                filtered_df = filtered_df[
+                    filtered_df["작가"].str.contains(q, case=False, na=False) |
+                    filtered_df["도서/강연제목"].str.contains(q, case=False, na=False) |
+                    filtered_df["주제/소개"].str.contains(q, case=False, na=False) |
+                    filtered_df["대상"].str.contains(q, case=False, na=False)
+                ]
 
         # --- 검색 결과 출력 ---
         st.markdown("---")
@@ -103,17 +171,15 @@ if not df.empty:
             items_per_page = 10
             total_pages = math.ceil(len(filtered_df) / items_per_page)
 
-            # 현재 페이지 범위 검증
             if st.session_state.current_page > total_pages:
                 st.session_state.current_page = 1
 
-            # 헤더 및 페이지 바로 이동 입력 칸
+            # 헤더 및 컨트롤
             head_col1, head_col2 = st.columns([3, 1])
             with head_col1:
                 st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다. (페이지 {st.session_state.current_page} / {total_pages})")
             
             with head_col2:
-                # 직접 이동할 페이지 입력 칸
                 target_p = st.number_input(
                     "🎯 페이지 바로 이동", 
                     min_value=1, 
@@ -131,12 +197,12 @@ if not df.empty:
 
             current_batch = filtered_df.iloc[start_idx:end_idx]
 
-            # 강연 목록 출력
+            # 목록 카드 출력
             for idx, row in current_batch.iterrows():
                 with st.container():
                     st.markdown(f"#### 📖 {row['도서/강연제목']}")
                     
-                    col1, col2, col3 = st.columns([2, 2, 1])
+                    col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
                     with col1:
                         st.write(f"**✍️ 작가:** {row['작가'] if row['작가'] else '미기재'}")
                         st.write(f"**🏢 출판사:** {row['출판사']}")
@@ -146,19 +212,37 @@ if not df.empty:
                     with col3:
                         url = str(row['상세페이지']).strip()
                         if url and url.startswith("http"):
-                            st.link_button("👉 상세페이지/신청", url)
+                            st.link_button("👉 상세/신청", url)
                         else:
                             st.caption("상세링크 없음")
+                    with col4:
+                        # 즐겨찾기(보관) 버튼
+                        item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
+                        is_bookmarked = item_id in [b.get('id') for b in st.session_state.bookmarks]
+                        
+                        btn_label = "⭐ 보관됨" if is_bookmarked else "☆ 보관하기"
+                        if st.button(btn_label, key=f"bm_{idx}"):
+                            if is_bookmarked:
+                                st.session_state.bookmarks = [b for b in st.session_state.bookmarks if b.get('id') != item_id]
+                            else:
+                                st.session_state.bookmarks.append({
+                                    "id": item_id,
+                                    "제목": row['도서/강연제목'],
+                                    "작가": row['작가'],
+                                    "출판사": row['출판사'],
+                                    "대상": row['대상'],
+                                    "강연방식": row['강연방식'],
+                                    "상세페이지": row['상세페이지']
+                                })
+                            st.rerun()
 
                     if row['주제/소개']:
                         st.caption(f"💡 주제/소개: {row['주제/소개']}")
                     
                     st.divider()
 
-            # ==================== 하단 페이지 단추 (1~10 단추 구성) ====================
+            # --- 하단 페이지 1~10 단추 ---
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            # 최대 10개의 페이지 번호 버튼 표기
             max_visible_buttons = 10
             curr = st.session_state.current_page
             
@@ -167,16 +251,13 @@ if not df.empty:
             if end_page - start_page + 1 < max_visible_buttons:
                 start_page = max(1, end_page - max_visible_buttons + 1)
 
-            # 버튼들을 가로 레이아웃으로 배치
             btn_cols = st.columns(end_page - start_page + 3)
 
-            # 1) [◀ 이전] 버튼
             with btn_cols[0]:
                 if st.button("◀ 이전", disabled=(curr == 1)):
                     st.session_state.current_page -= 1
                     st.rerun()
 
-            # 2) [1] [2] ... [10] 단추
             for i, p_num in enumerate(range(start_page, end_page + 1)):
                 with btn_cols[i + 1]:
                     is_current = (p_num == curr)
@@ -185,14 +266,40 @@ if not df.empty:
                         st.session_state.current_page = p_num
                         st.rerun()
 
-            # 3) [다음 ▶] 버튼
             with btn_cols[-1]:
                 if st.button("다음 ▶", disabled=(curr == total_pages)):
                     st.session_state.current_page += 1
                     st.rerun()
 
-    # ==================== TAB 2: 원본 데이터 보기 ====================
+    # ==================== TAB 2: 내 보관함 ====================
     with tab2:
+        st.markdown("### ⭐ 관심 강연 보관함")
+        st.write("검색하며 담아둔 강연 목록입니다. 보고서 작성이나 인쇄용으로 활용하세요.")
+
+        if not st.session_state.bookmarks:
+            st.info("아직 보관된 강연이 없습니다. 검색 결과에서 '☆ 보관하기' 버튼을 눌러보세요.")
+        else:
+            bm_df = pd.DataFrame(st.session_state.bookmarks)
+            
+            col_b1, col_b2 = st.columns([1, 4])
+            with col_b1:
+                if st.button("🗑️ 전체 비우기"):
+                    st.session_state.bookmarks = []
+                    st.rerun()
+
+            st.markdown("---")
+            for b_idx, b_item in enumerate(st.session_state.bookmarks):
+                st.markdown(f"**{b_idx+1}. 《{b_item['제목']}》 - {b_item['작가']} 작가**")
+                st.write(f"- 출판사: {b_item['출판사']} | 대상: {b_item['대상']} | 방식: {b_item['강연방식']}")
+                if b_item['상세페이지']:
+                    st.markdown(f"  [👉 상세페이지 바로가기]({b_item['상세페이지']})")
+                st.divider()
+
+            st.subheader("🖨️ 인쇄 및 표 형태 보기")
+            st.dataframe(bm_df[["제목", "작가", "출판사", "대상", "강연방식", "상세페이지"]], use_container_width=True)
+
+    # ==================== TAB 3: 원본 데이터 보기 ====================
+    with tab3:
         st.markdown("### 📊 베이스 데이터 전체 목록 (총 2,644건)")
         st.write("통합 데이터베이스의 전체 항목을 표 형태로 조회하고 CSV 파일로 다운로드할 수 있습니다.")
 
