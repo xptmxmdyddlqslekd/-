@@ -28,16 +28,17 @@ def is_chosung_query(query):
     return all(c in CHO_LIST or c.isspace() for c in query)
 
 # ---------------------------------------------------------
-# 데이터 로드
+# 데이터 로드 (기존 파일명 integrated_author_events.csv 사용)
 # ---------------------------------------------------------
 @st.cache_data
 def load_data():
+    csv_file = "integrated_author_events.csv"
     try:
-        df = pd.read_csv("integrated_author_events.csv")
+        df = pd.read_csv(csv_file)
         df = df.fillna("")
         return df
     except Exception as e:
-        st.error(f"데이터 파일(integrated_author_events.csv)을 불러오지 못했습니다: {e}")
+        st.error(f"데이터 파일({csv_file})을 불러오지 못했습니다: {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -128,9 +129,11 @@ if not df.empty:
 
         if search_query.strip():
             q = search_query.strip()
+            title_col = "표시용제목" if "표시용제목" in filtered_df.columns else "도서/강연제목"
+            
             if is_chosung_query(q):
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
-                filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
+                filtered_df["제목_초성"] = filtered_df[title_col].apply(get_chosung)
                 
                 filtered_df = filtered_df[
                     filtered_df["작가_초성"].str.contains(q, case=False, na=False) |
@@ -139,7 +142,7 @@ if not df.empty:
             else:
                 filtered_df = filtered_df[
                     filtered_df["작가"].str.contains(q, case=False, na=False) |
-                    filtered_df["도서/강연제목"].str.contains(q, case=False, na=False) |
+                    filtered_df[title_col].str.contains(q, case=False, na=False) |
                     filtered_df["주제/소개"].str.contains(q, case=False, na=False) |
                     filtered_df["대상"].str.contains(q, case=False, na=False)
                 ]
@@ -166,18 +169,20 @@ if not df.empty:
             if "표 형태" in view_mode:
                 st.markdown("##### 💡 검색된 결과를 엑셀처럼 한눈에 조회합니다.")
                 
-                # 이미지URL 컬럼이 있으면 표에 추가
-                display_cols = ["도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
-                if "이미지URL" in filtered_df.columns:
-                    display_cols.insert(0, "이미지URL")
+                title_col_name = "표시용제목" if "표시용제목" in filtered_df.columns else "도서/강연제목"
+                img_col_name = "썸네일URL" if "썸네일URL" in filtered_df.columns else ("이미지URL" if "이미지URL" in filtered_df.columns else None)
+                
+                display_cols = [title_col_name, "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                if img_col_name:
+                    display_cols.insert(0, img_col_name)
 
                 show_df = filtered_df[display_cols].reset_index(drop=True)
 
                 col_config = {
                     "상세페이지": st.column_config.LinkColumn("상세페이지 링크", display_text="👉 신청하기")
                 }
-                if "이미지URL" in show_df.columns:
-                    col_config["이미지URL"] = st.column_config.ImageColumn("표지", help="도서 표지 썸네일")
+                if img_col_name:
+                    col_config[img_col_name] = st.column_config.ImageColumn("표지", help="도서 썸네일")
 
                 st.dataframe(
                     show_df,
@@ -217,16 +222,18 @@ if not df.empty:
                 current_batch = filtered_df.iloc[start_idx:end_idx]
 
                 for idx, row in current_batch.iterrows():
+                    display_title = row.get('표시용제목', row.get('도서/강연제목', ''))
+                    img_url = row.get('썸네일URL', row.get('이미지URL', ''))
+
                     with st.container():
-                        st.markdown(f"#### 📖 {row['도서/강연제목']}")
+                        st.markdown(f"#### 📖 {display_title}")
                         
-                        # 표지 이미지 유무에 따른 컬럼 레이아웃 분기
-                        has_img = "이미지URL" in row and str(row['이미지URL']).startswith("http")
+                        has_img = isinstance(img_url, str) and img_url.startswith("http")
                         
                         if has_img:
                             img_col, col1, col2, col3, col4 = st.columns([1, 2.5, 2, 1.2, 1])
                             with img_col:
-                                st.image(row['이미지URL'], width=90)
+                                st.image(img_url, width=90)
                         else:
                             col1, col2, col3, col4 = st.columns([2.5, 2, 1.2, 1])
 
@@ -243,7 +250,7 @@ if not df.empty:
                             else:
                                 st.caption("상세링크 없음")
                         with col4:
-                            item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
+                            item_id = f"{row['출판사']}_{row['작가']}_{display_title}"
                             is_bookmarked = item_id in [b.get('id') for b in st.session_state.bookmarks]
                             
                             btn_label = "⭐ 보관됨" if is_bookmarked else "☆ 보관하기"
@@ -253,7 +260,7 @@ if not df.empty:
                                 else:
                                     st.session_state.bookmarks.append({
                                         "id": item_id,
-                                        "제목": row['도서/강연제목'],
+                                        "제목": display_title,
                                         "작가": row['작가'],
                                         "출판사": row['출판사'],
                                         "대상": row['대상'],
@@ -267,7 +274,7 @@ if not df.empty:
                         
                         st.divider()
 
-                # 하단 페이지 1~10 단추
+                # 하단 페이지 이동 버튼
                 st.markdown("<br>", unsafe_allow_html=True)
                 max_visible_buttons = 10
                 curr = st.session_state.current_page
@@ -326,14 +333,14 @@ if not df.empty:
 
     # ==================== TAB 3: 원본 데이터 보기 ====================
     with tab3:
-        st.markdown("### 📊 베이스 데이터 전체 목록 (총 2,644건)")
+        st.markdown(f"### 📊 베이스 데이터 전체 목록 (총 {len(df):,}건)")
         st.write("통합 데이터베이스의 전체 항목을 표 형태로 조회하고 CSV 파일로 다운로드할 수 있습니다.")
 
         csv_data = df.to_csv(index=False, encoding="utf-8-sig")
         st.download_button(
             label="📥 원본 데이터 (CSV) 다운로드",
             data=csv_data,
-            file_name="작가와의_만남_통합데이터.csv",
+            file_name="integrated_author_events.csv",
             mime="text/csv"
         )
 
