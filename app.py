@@ -54,10 +54,23 @@ def set_page(page_num):
     st.session_state.current_page = page_num
 
 # ---------------------------------------------------------
-# 메인 화면
+# 메인 화면 상단 헤더 & 홈버튼
 # ---------------------------------------------------------
-st.title("📚 작가와의 만남 통합 검색 서비스")
-st.caption("출판사, 강연 대상, 세부 학년, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.")
+title_col, home_col = st.columns([5, 1])
+
+with title_col:
+    st.title("📚 작가와의 만남 통합 검색 서비스")
+    st.caption("출판사, 강연 대상, 세부 학년, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.")
+
+with home_col:
+    st.write(" ") # 여백 맞춤용
+    if st.button("🏠 홈으로", use_container_width=True):
+        st.session_state.clear()
+        st.session_state.current_page = 1
+        st.session_state.bookmarks = []
+        st.rerun()
+
+st.markdown("---")
 
 if not df.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 강연 검색하기", "⭐ 내 보관함", "📄 원본 데이터 보기 및 다운로드"])
@@ -160,7 +173,7 @@ if not df.empty:
             top_col1, top_col2, top_col3 = st.columns([2.5, 1.5, 2])
             
             with top_col1:
-                # 3. 검색 결과 내 재검색
+                # 검색 결과 내 재검색
                 sub_query = st.text_input("🔍 검색 결과 내 재검색", "", placeholder="결과 내에서 추가 키워드 입력", key="sub_search")
                 if sub_query.strip():
                     sq = sub_query.strip()
@@ -172,7 +185,7 @@ if not df.empty:
                     ]
 
             with top_col2:
-                # 2. 검색 결과 정렬
+                # 검색 결과 정렬
                 sort_option = st.selectbox(
                     "🔀 결과 정렬 기준",
                     ["기본순", "도서/강연제목순", "작가명순", "출판사순"],
@@ -199,7 +212,6 @@ if not df.empty:
             if "표 형태" in view_mode:
                 st.markdown("##### 💡 원하시는 항목을 체크하여 한 번에 보관함에 추가하세요.")
                 
-                # 4. 표 형태 내 즐겨찾기(보관함) 추가 기능
                 table_df = filtered_df.copy().reset_index(drop=True)
                 
                 # 이미 보관함에 있는지 확인하여 체크박스 기본값 설정
@@ -233,7 +245,6 @@ if not df.empty:
                 if st.button("⭐ 선택한 항목 보관함 상태 업데이트", use_container_width=True):
                     selected_rows = edited_df[edited_df["선택"] == True]
                     
-                    # 체크된 항목 보관함 반영
                     new_bookmarks = []
                     for _, row in selected_rows.iterrows():
                         item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
@@ -247,7 +258,6 @@ if not df.empty:
                             "상세페이지": row['상세페이지']
                         })
                     
-                    # 기존 보관함 업데이트
                     st.session_state.bookmarks = new_bookmarks
                     st.success("관심 강연 보관함이 성공적으로 업데이트되었습니다!")
                     st.rerun()
@@ -288,7 +298,7 @@ if not df.empty:
                     img_url = row.get('썸네일URL', row.get('이미지URL', ''))
                     method_str = str(row['강연방식'])
 
-                    # 1. 카드 내 대면/비대면 태그 (Badge) 생성
+                    # 카드 내 대면/비대면 태그 (Badge)
                     if "비대면" in method_str or "온라인" in method_str:
                         method_badge = ":blue[💻 온라인/비대면]"
                     elif "대면" in method_str:
