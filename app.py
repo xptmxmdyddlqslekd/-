@@ -117,6 +117,7 @@ if not df.empty:
 
         filtered_df = df.copy()
 
+        # 필터 적용
         if selected_publisher:
             filtered_df = filtered_df[filtered_df["출판사"].isin(selected_publisher)]
 
@@ -131,13 +132,12 @@ if not df.empty:
         if selected_method != "전체":
             filtered_df = filtered_df[filtered_df["강연방식"].str.contains(selected_method, na=False)]
 
+        # 1차 키워드 검색
         if search_query.strip():
             q = search_query.strip()
-            
             if is_chosung_query(q):
                 filtered_df["제목_초성"] = filtered_df["도서/강연제목"].apply(get_chosung)
                 filtered_df["작가_초성"] = filtered_df["작가"].apply(get_chosung)
-                
                 filtered_df = filtered_df[
                     filtered_df["제목_초성"].str.contains(q, case=False, na=False) |
                     filtered_df["작가_초성"].str.contains(q, case=False, na=False)
@@ -156,11 +156,36 @@ if not df.empty:
             st.subheader("총 0건의 강연이 검색되었습니다.")
             st.info("검색 조건에 일치하는 결과가 없습니다. 필터를 조정해 보세요.")
         else:
-            top_col1, top_col2 = st.columns([3, 2])
-            with top_col1:
-                st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
+            # --- 상단 옵션바 (재검색, 정렬, 보기 모드) ---
+            top_col1, top_col2, top_col3 = st.columns([2.5, 1.5, 2])
             
+            with top_col1:
+                # 3. 검색 결과 내 재검색
+                sub_query = st.text_input("🔍 검색 결과 내 재검색", "", placeholder="결과 내에서 추가 키워드 입력", key="sub_search")
+                if sub_query.strip():
+                    sq = sub_query.strip()
+                    filtered_df = filtered_df[
+                        filtered_df["도서/강연제목"].str.contains(sq, case=False, na=False) |
+                        filtered_df["작가"].str.contains(sq, case=False, na=False) |
+                        filtered_df["주제/소개"].str.contains(sq, case=False, na=False) |
+                        filtered_df["출판사"].str.contains(sq, case=False, na=False)
+                    ]
+
             with top_col2:
+                # 2. 검색 결과 정렬
+                sort_option = st.selectbox(
+                    "🔀 결과 정렬 기준",
+                    ["기본순", "도서/강연제목순", "작가명순", "출판사순"],
+                    key="sort_opt"
+                )
+                if sort_option == "도서/강연제목순":
+                    filtered_df = filtered_df.sort_values(by="도서/강연제목").reset_index(drop=True)
+                elif sort_option == "작가명순":
+                    filtered_df = filtered_df.sort_values(by="작가").reset_index(drop=True)
+                elif sort_option == "출판사순":
+                    filtered_df = filtered_df.sort_values(by="출판사").reset_index(drop=True)
+
+            with top_col3:
                 view_mode = st.radio(
                     "📱 보기 방식 선택",
                     ["📋 한눈에 보기 (엑셀 표 형태)", "🎴 상세 보기 (카드 형태)"],
@@ -168,30 +193,64 @@ if not df.empty:
                     key="view_mode"
                 )
 
-            # ==================== [MODE 1] 표 형태 ====================
-            if "표 형태" in view_mode:
-                st.markdown("##### 💡 검색된 결과를 엑셀처럼 한눈에 조회합니다.")
-                
-                img_col_name = "썸네일URL" if "썸네일URL" in filtered_df.columns else ("이미지URL" if "이미지URL" in filtered_df.columns else None)
-                
-                display_cols = ["도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
-                if img_col_name:
-                    display_cols.insert(0, img_col_name)
+            st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
 
-                show_df = filtered_df[display_cols].reset_index(drop=True)
+            # ==================== [MODE 1] 표 형태 (즐겨찾기 포함) ====================
+            if "표 형태" in view_mode:
+                st.markdown("##### 💡 원하시는 항목을 체크하여 한 번에 보관함에 추가하세요.")
+                
+                # 4. 표 형태 내 즐겨찾기(보관함) 추가 기능
+                table_df = filtered_df.copy().reset_index(drop=True)
+                
+                # 이미 보관함에 있는지 확인하여 체크박스 기본값 설정
+                bookmarked_ids = [b.get('id') for b in st.session_state.bookmarks]
+                table_df["선택"] = table_df.apply(
+                    lambda r: f"{r['출판사']}_{r['작가']}_{r['도서/강연제목']}" in bookmarked_ids, axis=1
+                )
+
+                img_col_name = "썸네일URL" if "썸네일URL" in table_df.columns else ("이미지URL" if "이미지URL" in table_df.columns else None)
+                
+                display_cols = ["선택", "도서/강연제목", "작가", "출판사", "대상", "강연방식", "주제/소개", "상세페이지"]
+                if img_col_name:
+                    display_cols.insert(1, img_col_name)
 
                 col_config = {
-                    "상세페이지": st.column_config.LinkColumn("상세페이지 링크", display_text="👉 신청하기")
+                    "선택": st.column_config.CheckboxColumn("⭐ 보관", help="체크 후 상단 버튼을 눌러 보관함에 추가/삭제합니다."),
+                    "상세페이지": st.column_config.LinkColumn("상세페이지", display_text="👉 신청하기")
                 }
                 if img_col_name:
                     col_config[img_col_name] = st.column_config.ImageColumn("표지", help="도서 썸네일")
 
-                st.dataframe(
-                    show_df,
+                edited_df = st.data_editor(
+                    table_df[display_cols],
                     use_container_width=True,
-                    height=550,
-                    column_config=col_config
+                    height=500,
+                    column_config=col_config,
+                    disabled=[c for c in display_cols if c != "선택"],
+                    key="table_editor"
                 )
+
+                if st.button("⭐ 선택한 항목 보관함 상태 업데이트", use_container_width=True):
+                    selected_rows = edited_df[edited_df["선택"] == True]
+                    
+                    # 체크된 항목 보관함 반영
+                    new_bookmarks = []
+                    for _, row in selected_rows.iterrows():
+                        item_id = f"{row['출판사']}_{row['작가']}_{row['도서/강연제목']}"
+                        new_bookmarks.append({
+                            "id": item_id,
+                            "제목": row['도서/강연제목'],
+                            "작가": row['작가'],
+                            "출판사": row['출판사'],
+                            "대상": row['대상'],
+                            "강연방식": row['강연방식'],
+                            "상세페이지": row['상세페이지']
+                        })
+                    
+                    # 기존 보관함 업데이트
+                    st.session_state.bookmarks = new_bookmarks
+                    st.success("관심 강연 보관함이 성공적으로 업데이트되었습니다!")
+                    st.rerun()
 
             # ==================== [MODE 2] 카드 형태 ====================
             else:
@@ -227,9 +286,18 @@ if not df.empty:
                 for idx, row in current_batch.iterrows():
                     display_title = row['도서/강연제목']
                     img_url = row.get('썸네일URL', row.get('이미지URL', ''))
+                    method_str = str(row['강연방식'])
+
+                    # 1. 카드 내 대면/비대면 태그 (Badge) 생성
+                    if "비대면" in method_str or "온라인" in method_str:
+                        method_badge = ":blue[💻 온라인/비대면]"
+                    elif "대면" in method_str:
+                        method_badge = ":green[🏫 대면 강연]"
+                    else:
+                        method_badge = f" :gray[{method_str}]" if method_str else ""
 
                     with st.container():
-                        st.markdown(f"#### 📖 {display_title}")
+                        st.markdown(f"#### 📖 {display_title} {method_badge}")
                         
                         has_img = isinstance(img_url, str) and img_url.startswith("http")
                         
