@@ -6,6 +6,104 @@ import math
 st.set_page_config(page_title="작가와의 만남 통합 검색", layout="wide", page_icon="📚")
 
 # ---------------------------------------------------------
+# 🎨 파스텔톤 & 둥글둥글 커스텀 CSS 적용
+# ---------------------------------------------------------
+st.markdown("""
+<style>
+    /* 1. 전체 배경 및 기본 폰트 설정 */
+    .stApp {
+        background-color: #F8F9FA;
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+
+    /* 2. 메인 헤더 타이틀 영역 */
+    .main-header {
+        background: linear-gradient(135deg, #FFF3F8 0%, #EBF3FA 100%);
+        padding: 24px 30px;
+        border-radius: 24px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.03);
+        margin-bottom: 25px;
+        border: 1px solid #F0ECE9;
+    }
+
+    /* 3. 입력 필드 (검색창, 드롭다운 등) 둥글둥글 스타일 */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stMultiSelect div[data-baseweb="select"] {
+        border-radius: 16px !important;
+        border: 1.5px solid #E2E8F0 !important;
+        background-color: #FFFFFF !important;
+        padding: 8px 12px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02) !important;
+    }
+    .stTextInput input:focus {
+        border-color: #B2C8DF !important;
+        box-shadow: 0 0 0 3px rgba(178, 200, 223, 0.3) !important;
+    }
+
+    /* 4. 버튼 둥글글 커스텀 & 마우스 호버 */
+    .stButton>button {
+        border-radius: 16px !important;
+        border: none !important;
+        background-color: #EBF3FA !important;
+        color: #4A5568 !important;
+        font-weight: 600 !important;
+        padding: 8px 18px !important;
+        transition: all 0.25s ease-in-out !important;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.04) !important;
+    }
+    .stButton>button:hover {
+        background-color: #D6E4F0 !important;
+        color: #2D3748 !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 14px rgba(0,0,0,0.08) !important;
+    }
+
+    /* 5. 탭(Tabs) 디자인 스타일링 */
+    div[data-baseweb="tab-list"] {
+        gap: 12px;
+        background-color: transparent;
+    }
+    button[data-baseweb="tab"] {
+        border-radius: 20px !important;
+        padding: 10px 20px !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        font-weight: 600 !important;
+        color: #718096 !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
+    }
+    button[aria-selected="true"] {
+        background-color: #FFF3F8 !important;
+        border-color: #FFD6E8 !important;
+        color: #D5658B !important;
+    }
+
+    /* 6. 카드 컨테이너 파스텔톤 둥근 형태 */
+    div[data-testid="stVerticalBlock"] > div[style*="background-color"] {
+        background-color: #FFFFFF !important;
+        border-radius: 20px !important;
+        padding: 20px !important;
+        border: 1px solid #EDF2F7 !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.03) !important;
+        margin-bottom: 12px !important;
+    }
+
+    /* 7. 사이드바 스타일링 */
+    section[data-testid="stSidebar"] {
+        background-color: #FFFBF7 !important;
+        border-right: 1px solid #F0ECE9 !important;
+    }
+
+    /* 8. 데이터 표 디자인 */
+    div[data-testid="stDataFrame"] {
+        border-radius: 20px !important;
+        overflow: hidden !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+        border: 1px solid #E2E8F0 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
 # 한글 초성 검색용 함수
 # ---------------------------------------------------------
 CHO_LIST = [
@@ -59,18 +157,20 @@ def set_page(page_num):
 title_col, home_col = st.columns([5, 1])
 
 with title_col:
-    st.title("📚 작가와의 만남 통합 검색 서비스")
-    st.caption("출판사, 강연 대상, 세부 학년, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.")
+    st.markdown("""
+        <div class="main-header">
+            <h2 style="margin:0; color:#3182CE; font-weight:700;">📚 작가와의 만남 통합 검색</h2>
+            <p style="margin:5px 0 0 0; color:#718096; font-size:14px;">출판사, 강연 대상, 세부 학년, 주제별로 원하시는 작가 강연을 손쉽게 찾아보세요.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 with home_col:
-    st.write(" ") # 여백 맞춤용
+    st.write(" ")
     if st.button("🏠 홈으로", use_container_width=True):
         st.session_state.clear()
         st.session_state.current_page = 1
         st.session_state.bookmarks = []
         st.rerun()
-
-st.markdown("---")
 
 if not df.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 강연 검색하기", "⭐ 내 보관함", "📄 원본 데이터 보기 및 다운로드"])
@@ -78,7 +178,7 @@ if not df.empty:
     # ==================== TAB 1: 강연 검색 ====================
     with tab1:
         # --- 사이드바 필터 ---
-        st.sidebar.header("🎛️ 조건별 필터")
+        st.sidebar.markdown("### 🎛️ 조건별 필터")
 
         if st.sidebar.button("🔄 모든 필터 초기화", use_container_width=True):
             st.session_state.clear()
@@ -121,10 +221,10 @@ if not df.empty:
         st.sidebar.markdown("[👉 강연 정보 제보/수정 요청](https://forms.google.com)", unsafe_allow_html=True)
 
         # --- 메인 검색창 ---
-        st.markdown("### 🔎 키워드 직접 검색")
+        st.markdown("##### 🔎 키워드 직접 검색")
         search_query = st.text_input(
-            "도서/강연 제목, 작가명, 주제어 또는 초성(예: ㄱㄱㅅ, ㅂㅎㄴ)으로 검색하세요",
             "",
+            placeholder="도서/강연 제목, 작가명, 주제어 또는 초성(예: ㄱㄱㅅ, ㅂㅎㄴ)으로 검색해보세요!",
             key="search_input"
         )
 
@@ -169,11 +269,10 @@ if not df.empty:
             st.subheader("총 0건의 강연이 검색되었습니다.")
             st.info("검색 조건에 일치하는 결과가 없습니다. 필터를 조정해 보세요.")
         else:
-            # --- 상단 옵션바 (재검색, 정렬, 보기 모드) ---
+            # --- 상단 옵션바 ---
             top_col1, top_col2, top_col3 = st.columns([2.5, 1.5, 2])
             
             with top_col1:
-                # 검색 결과 내 재검색
                 sub_query = st.text_input("🔍 검색 결과 내 재검색", "", placeholder="결과 내에서 추가 키워드 입력", key="sub_search")
                 if sub_query.strip():
                     sq = sub_query.strip()
@@ -185,7 +284,6 @@ if not df.empty:
                     ]
 
             with top_col2:
-                # 검색 결과 정렬
                 sort_option = st.selectbox(
                     "🔀 결과 정렬 기준",
                     ["기본순", "도서/강연제목순", "작가명순", "출판사순"],
@@ -206,15 +304,14 @@ if not df.empty:
                     key="view_mode"
                 )
 
-            st.subheader(f"총 {len(filtered_df):,}건의 강연이 검색되었습니다.")
+            st.markdown(f"#### 🎉 총 **{len(filtered_df):,}**건의 강연을 찾았습니다.")
 
             # ==================== [MODE 1] 표 형태 (즐겨찾기 포함) ====================
             if "표 형태" in view_mode:
-                st.markdown("##### 💡 원하시는 항목을 체크하여 한 번에 보관함에 추가하세요.")
+                st.caption("💡 원하시는 항목을 체크하여 한 번에 보관함에 추가하세요.")
                 
                 table_df = filtered_df.copy().reset_index(drop=True)
                 
-                # 이미 보관함에 있는지 확인하여 체크박스 기본값 설정
                 bookmarked_ids = [b.get('id') for b in st.session_state.bookmarks]
                 table_df["선택"] = table_df.apply(
                     lambda r: f"{r['출판사']}_{r['작가']}_{r['도서/강연제목']}" in bookmarked_ids, axis=1
@@ -298,11 +395,10 @@ if not df.empty:
                     img_url = row.get('썸네일URL', row.get('이미지URL', ''))
                     method_str = str(row['강연방식'])
 
-                    # 카드 내 대면/비대면 태그 (Badge)
                     if "비대면" in method_str or "온라인" in method_str:
-                        method_badge = ":blue[💻 온라인/비대면]"
+                        method_badge = ":blue[💻 온라인]"
                     elif "대면" in method_str:
-                        method_badge = ":green[🏫 대면 강연]"
+                        method_badge = ":green[🏫 대면]"
                     else:
                         method_badge = f" :gray[{method_str}]" if method_str else ""
 
