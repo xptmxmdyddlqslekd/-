@@ -38,7 +38,7 @@ st.markdown("""
     }
 
     /* Input & Select 요소 커스텀 */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
         border-radius: 8px !important;
         border: 1px solid #CBD5E1 !important;
         background-color: #FFFFFF !important;
@@ -385,15 +385,33 @@ if not df.empty:
                                             })
                                         st.rerun()
 
+                # 하단 페이지네이션 (페이지 직입력 기능 포함)
                 st.markdown("<br>", unsafe_allow_html=True)
-                p_col1, p_col2, p_col3 = st.columns([1, 3, 1])
+                p_col1, p_col2, p_col3, p_col4 = st.columns([1.5, 1, 1.5, 1.5])
+                
                 with p_col1:
                     if st.button("이전 페이지", disabled=(st.session_state.current_page == 1), use_container_width=True):
                         set_page(st.session_state.current_page - 1)
                         st.rerun()
+                
                 with p_col2:
-                    st.markdown(f"<p style='text-align:center; margin-top:8px; font-weight:500; font-size:14px; color:#64748B;'>{st.session_state.current_page} / {total_pages} 페이지</p>", unsafe_allow_html=True)
+                    input_page = st.number_input(
+                        "페이지 입력",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=st.session_state.current_page,
+                        step=1,
+                        label_visibility="collapsed",
+                        key="page_input"
+                    )
+                    if input_page != st.session_state.current_page:
+                        set_page(input_page)
+                        st.rerun()
+                
                 with p_col3:
+                    st.markdown(f"<p style='margin-top:8px; font-weight:500; font-size:14px; color:#64748B;'>/ {total_pages} 페이지</p>", unsafe_allow_html=True)
+                
+                with p_col4:
                     if st.button("다음 페이지", disabled=(st.session_state.current_page >= total_pages), use_container_width=True):
                         set_page(st.session_state.current_page + 1)
                         st.rerun()
