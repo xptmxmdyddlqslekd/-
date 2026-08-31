@@ -107,11 +107,24 @@ df = load_data()
 # Session State 초기화
 if "current_page" not in st.session_state:
     st.session_state.current_page = 1
+if "page_input_val" not in st.session_state:
+    st.session_state.page_input_val = 1
 if "bookmarks" not in st.session_state:
     st.session_state.bookmarks = []
 
-def set_page(page_num):
-    st.session_state.current_page = page_num
+# 페이지 변경 함수
+def update_page_from_input():
+    st.session_state.current_page = st.session_state.page_input_val
+
+def go_prev_page():
+    if st.session_state.current_page > 1:
+        st.session_state.current_page -= 1
+        st.session_state.page_input_val = st.session_state.current_page
+
+def go_next_page(max_page):
+    if st.session_state.current_page < max_page:
+        st.session_state.current_page += 1
+        st.session_state.page_input_val = st.session_state.current_page
 
 # ---------------------------------------------------------
 # 사이드바 컨트롤 센터
@@ -124,12 +137,14 @@ with st.sidebar:
         if st.button("홈으로", use_container_width=True):
             st.session_state.clear()
             st.session_state.current_page = 1
+            st.session_state.page_input_val = 1
             st.session_state.bookmarks = []
             st.rerun()
     with col_sb2:
         if st.button("초기화", use_container_width=True):
             st.session_state.clear()
             st.session_state.current_page = 1
+            st.session_state.page_input_val = 1
             st.session_state.bookmarks = []
             st.rerun()
 
@@ -301,8 +316,10 @@ if not df.empty:
                 items_per_page = 10
                 total_pages = math.ceil(len(filtered_df) / items_per_page)
 
+                # 페이지 범위 안전 보장
                 if st.session_state.current_page > total_pages:
                     st.session_state.current_page = max(1, total_pages)
+                st.session_state.page_input_val = st.session_state.current_page
 
                 start_idx = (st.session_state.current_page - 1) * items_per_page
                 current_batch = filtered_df.iloc[start_idx:start_idx + items_per_page].reset_index(drop=True)
@@ -385,36 +402,39 @@ if not df.empty:
                                             })
                                         st.rerun()
 
-                # 하단 페이지네이션 (페이지 직입력 기능 포함)
+                # 하단 페이지네이션 (독립적 작동)
                 st.markdown("<br>", unsafe_allow_html=True)
                 p_col1, p_col2, p_col3, p_col4 = st.columns([1.5, 1, 1.5, 1.5])
                 
                 with p_col1:
-                    if st.button("이전 페이지", disabled=(st.session_state.current_page == 1), use_container_width=True):
-                        set_page(st.session_state.current_page - 1)
-                        st.rerun()
+                    st.button(
+                        "이전 페이지",
+                        disabled=(st.session_state.current_page <= 1),
+                        use_container_width=True,
+                        on_click=go_prev_page
+                    )
                 
                 with p_col2:
-                    input_page = st.number_input(
+                    st.number_input(
                         "페이지 입력",
                         min_value=1,
                         max_value=total_pages,
-                        value=st.session_state.current_page,
-                        step=1,
-                        label_visibility="collapsed",
-                        key="page_input"
+                        key="page_input_val",
+                        on_change=update_page_from_input,
+                        label_visibility="collapsed"
                     )
-                    if input_page != st.session_state.current_page:
-                        set_page(input_page)
-                        st.rerun()
                 
                 with p_col3:
                     st.markdown(f"<p style='margin-top:8px; font-weight:500; font-size:14px; color:#64748B;'>/ {total_pages} 페이지</p>", unsafe_allow_html=True)
                 
                 with p_col4:
-                    if st.button("다음 페이지", disabled=(st.session_state.current_page >= total_pages), use_container_width=True):
-                        set_page(st.session_state.current_page + 1)
-                        st.rerun()
+                    st.button(
+                        "다음 페이지",
+                        disabled=(st.session_state.current_page >= total_pages),
+                        use_container_width=True,
+                        on_click=go_next_page,
+                        args=(total_pages,)
+                    )
 
             # ==================== [MODE 2] 표 형태 ====================
             else:
